@@ -175,9 +175,9 @@ puts  sum[50,5000]
 
 n = 100
 Benchmark.bm do |x|
-  x.report{ n.times{ sum[2,99999] } }
+  x.report{ n.times{ sum[2,9999] } }
   GC.start
-  x.report{ n.times{ sumo[2,99999] } }
+  x.report{ n.times{ sumo[2,9999] } }
 end
 
 
