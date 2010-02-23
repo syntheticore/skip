@@ -119,11 +119,8 @@ def compile token, f, jit_vars, num_args
     obj = compile obj, f, jit_vars, num_args
     args = compile args, f, jit_vars, num_args
     case method.to_s
-    when *%w{ + - * / < > }
+    when *%w{ + - * / < > % == }
       obj.send method, args.first
-    when :==
-      puts "equal"
-      f.insn_eq(obj, args.first)
     end
   when :if
     cond, code, retval = token
@@ -160,7 +157,7 @@ sum = lambda do |i,a|
   while i < a
     i += 2
     a += 1
-    if i < 100
+    if a % 2 == 0
       r += 1
     end
   end
@@ -178,9 +175,9 @@ puts  sum[50,5000]
 
 n = 100
 Benchmark.bm do |x|
-  x.report{ n.times{ sum[2,9999] } }
+  x.report{ n.times{ sum[2,99999] } }
   GC.start
-  x.report{ n.times{ sumo[2,9999] } }
+  x.report{ n.times{ sumo[2,99999] } }
 end
 
 
