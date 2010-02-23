@@ -42,15 +42,12 @@ def optimized &b
         jit = JIT::Function.build(signature) do |f|
           # map ruby args to their jit versions
           jit_vars = {}
-          num_args_given.times do |i|
-            jit_vars[args[i]] = f.param(i)
-          end
           # compile parse tree recursively
-          r = compile block, f, jit_vars
+          r = compile block, f, jit_vars, num_args_given
           # return the last result produced
           f.return r
         end
-        #puts jit.dump
+        puts jit.dump
         Thread.current[:jit_result_info][name] = [retval, jit]
         retval
       else
@@ -66,16 +63,23 @@ def optimized &b
   end
 end
 
-def compile token, f, jit_vars
+def compile token, f, jit_vars, num_args
+  puts token.inspect
   name = token.shift
   puts name
   case name
   when :bmethod  # lambda definition
     signature, code = token
-    compile signature, f, jit_vars if signature
-    #puts code.inspect
-    #puts "-" * 60
-    compile code, f, jit_vars
+    compile signature, f, jit_vars, num_args if signature
+    compile code, f, jit_vars, num_args
+  when :masgn  # init block parameters
+    params, unknown, unknown = token
+    params = compile params, f, jit_vars, num_args
+    args = (0...num_args).map{|i| f.param i }
+    params.zip(args) do |p,a|
+      jit_vars[p] = a
+    end
+    nil
   when :lit  # literal
     value = token.first
     lit = f.value( $jit_types[value.class], value )
@@ -87,24 +91,32 @@ def compile token, f, jit_vars
     jit_vars[name] ||= f.value($jit_types[Fixnum], 0)
   when :dasgn_curr  # assignment to local variable
     varname, expr = token
-    expr = compile expr, f, jit_vars
-    if jit_vars[varname]
-      jit_vars[varname].store expr
+    if expr
+      expr = compile expr, f, jit_vars, num_args
+      jv = jit_vars[varname]
+      if jv
+        jv.store expr
+      else
+        jit_vars[varname] = expr
+      end
+      jv
     else
-      jit_vars[varname] = expr
+      # var is a block parameter
+      # just return the name so that :masgn can map it to the jit params
+      varname
     end
   when :array
-    token.map{|expr| compile expr, f, jit_vars }
+    token.map{|expr| puts expr.inspect; compile expr, f, jit_vars, num_args }
   when :block
     r = nil
     for expr in token
-      r = compile expr, f, jit_vars
+      r = compile expr, f, jit_vars, num_args
     end
     r
   when :call
     obj, method, args = token
-    obj = compile obj, f, jit_vars
-    args = compile args, f, jit_vars
+    obj = compile obj, f, jit_vars, num_args
+    args = compile args, f, jit_vars, num_args
     case method.to_s
     when *%w{ + - * / < > }
       obj.send method, args.first
@@ -113,19 +125,18 @@ def compile token, f, jit_vars
       f.insn_eq(obj, args.first)
     end
   when :if
-    puts token.inspect
     cond, code, retval = token
-    cond = compile cond, f, jit_vars
+    cond = compile cond, f, jit_vars, num_args
     f.if( cond ) {
-      compile code, f, jit_vars
+      compile code, f, jit_vars, num_args
     }.end
   when :while
     cond, code, retval = token
     dummy, lhs, op, rhs = cond
-    lhs = compile lhs, f, jit_vars
-    rhs = compile rhs, f, jit_vars
+    lhs = compile lhs, f, jit_vars, num_args
+    rhs = compile rhs, f, jit_vars, num_args
     f.while{ lhs.send op, rhs.first }.do{
-      compile code, f, jit_vars
+      compile code, f, jit_vars, num_args
     }.end
     retval
   else
@@ -143,9 +154,7 @@ class Array
 end
 
 
-sum = lambda do
-  i = 2
-  a = 9999
+sum = lambda do |i,a|
   r = 0
   while i < a
     i += 2
@@ -159,16 +168,18 @@ end
 
 sumo = optimized &sum
 
-puts sumo[]
+puts sumo[2,9999]
+puts  sum[2,9999]
 puts "-" * 60
-puts sumo[]
+puts sumo[50,5000]
+puts  sum[50,5000]
 
 
 n = 100
 Benchmark.bm do |x|
-  x.report{ n.times{ sum[] } }
+  x.report{ n.times{ sum[2,9999] } }
   GC.start
-  x.report{ n.times{ sumo[] } }
+  x.report{ n.times{ sumo[2,9999] } }
 end
 
 
