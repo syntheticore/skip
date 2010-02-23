@@ -103,22 +103,21 @@ def compile token, f, jit_vars
     obj, method, args = token
     obj = compile obj, f, jit_vars
     args = compile args, f, jit_vars
-    case method
-    when  :+, :-, :*, :/, :<
-      r = f.value( $jit_types[Fixnum], 0)
+    case method.to_s
+    when *%w{ + - * / < > }
       obj.send method, args.first
     end
   when :while
     cond, code, unknown = token
     puts cond.inspect, code.inspect, unknown.inspect
-    j = f.value(:INT, 0)
-    cond = compile cond, f, jit_vars
-    f.while{ cond }.do{
+    dummy, lhs, op, rhs = cond
+    lhs = compile lhs, f, jit_vars
+    rhs = compile rhs, f, jit_vars
+    f.while{ lhs.send op, rhs.first }.do{
       compile code, f, jit_vars
-      j.store j + 1
     }.end
   else
-    puts "WARNING: can't compile #{name}"
+    puts "WARNING: Can't compile #{name} instruction"
   end
 end
 
@@ -136,9 +135,11 @@ end
 
 
 sum = lambda do
-  i = 0
-  while i < 5
-    i += 1
+  i = 2
+  a = 99999
+  while i < a
+    i += 2
+    a += 1
   end
   i
 end
@@ -150,7 +151,7 @@ puts "-" * 60
 puts sumo[]
 
 
-n = 900
+n = 100
 Benchmark.bm do |x|
   x.report{ n.times{ sum[] } }
   GC.start
