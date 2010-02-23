@@ -50,6 +50,7 @@ def optimized &b
           # return the last result produced
           f.return r
         end
+        #puts jit.dump
         Thread.current[:jit_result_info][name] = [retval, jit]
         retval
       else
@@ -114,11 +115,10 @@ def compile token, f, jit_vars
   when :if
     puts token.inspect
     cond, code, retval = token
-    dummy, lhs, op, rhs = cond
-    lhs = compile lhs, f, jit_vars
-    rhs = compile rhs, f, jit_vars
-    #cond = compile cond, f, jit_vars
-    code = compile code, f, jit_vars
+    cond = compile cond, f, jit_vars
+    f.if( cond ) {
+      compile code, f, jit_vars
+    }.end
   when :while
     cond, code, retval = token
     dummy, lhs, op, rhs = cond
@@ -150,11 +150,11 @@ sum = lambda do
   while i < a
     i += 2
     a += 1
-    if a == 0
-      1
+    if i < 100
+      r += 1
     end
   end
-  a
+  r
 end
 
 sumo = optimized &sum
