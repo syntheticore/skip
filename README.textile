@@ -1,0 +1,35 @@
+h3. Skip
+
+ Optimize your ruby methods using JIT compilation
+
+<pre>
+  <code>
+    require "rubygems"
+    require "skip"
+    
+    func = lambda do |i,j|
+      r = 0
+      while i < j
+        i += 2
+        j += 1
+        r += 1 if j % 2 == 0
+      end
+      r
+    end
+    
+    opti = optimized &func
+
+    n = 100
+    Benchmark.bm do |x|
+      x.report{ n.times{ func[2,99999] } }
+      GC.start
+      x.report{ n.times{ opti[2,99999] } }
+    end
+    
+      user     system      total        real
+ 32.030000   0.020000  32.050000 ( 32.049772)
+  0.440000   0.000000   0.440000 (  0.439581)
+
+  </code>
+</pre>
+
