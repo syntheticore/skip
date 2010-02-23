@@ -4,7 +4,6 @@
 #
 
 require 'rubygems'
-require 'parse_tree'
 require 'benchmark'
 
 
@@ -14,6 +13,7 @@ require 'benchmark'
 def optimized &b
   begin
     require 'jit'
+    require 'parse_tree'
     $jit_types = {
       Fixnum => :INT,
       Float => :DOUBLE }
@@ -59,7 +59,8 @@ def optimized &b
       end
     end
   rescue LoadError
-    b # return the unmodified block if libjit is not available
+    puts "WARNING: ruby-libjit and ParseTree gems are required for JIT compilation"
+    b # return the unmodified block if libjit or parse_tree is not available
   end
 end
 
@@ -87,7 +88,7 @@ def compile token, f, jit_vars, num_args
   when :dvar  # local variable
     name = token.first
     # we need to create the var if it doesn't exist, 
-    # because it can be referenced before it is asigned to
+    # because it can be referenced before it is assigned to
     jit_vars[name] ||= f.value($jit_types[Fixnum], 0)
   when :dasgn_curr  # assignment to local variable
     varname, expr = token
