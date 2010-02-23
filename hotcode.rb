@@ -29,9 +29,10 @@ def optimized &b
       # on first run...
       if !Thread.current[:jit_result_info][name]
         # inject block into wrapper class
-        Wrapper.send :define_method, :code, b
+        wrapper = Class.new
+        wrapper.send :define_method, :code, b
         # build parse tree from that
-        sexp = ParseTree.translate Wrapper, :code
+        sexp = ParseTree.translate wrapper, :code
         block = sexp.drop_level
         # run original code to determine return type
         retval = yield *args
@@ -71,8 +72,8 @@ def compile token, f, jit_vars
   when :bmethod  # lambda definition
     signature, code = token
     compile signature, f, jit_vars if signature
-    puts code.inspect
-    puts "-" * 60
+    #puts code.inspect
+    #puts "-" * 60
     compile code, f, jit_vars
   when :lit  # literal
     value = token.first
@@ -106,22 +107,30 @@ def compile token, f, jit_vars
     case method.to_s
     when *%w{ + - * / < > }
       obj.send method, args.first
+    when :==
+      puts "equal"
+      f.insn_eq(obj, args.first)
     end
+  when :if
+    puts token.inspect
+    cond, code, retval = token
+    dummy, lhs, op, rhs = cond
+    lhs = compile lhs, f, jit_vars
+    rhs = compile rhs, f, jit_vars
+    #cond = compile cond, f, jit_vars
+    code = compile code, f, jit_vars
   when :while
-    cond, code, unknown = token
-    puts cond.inspect, code.inspect, unknown.inspect
+    cond, code, retval = token
     dummy, lhs, op, rhs = cond
     lhs = compile lhs, f, jit_vars
     rhs = compile rhs, f, jit_vars
     f.while{ lhs.send op, rhs.first }.do{
       compile code, f, jit_vars
     }.end
+    retval
   else
     puts "WARNING: Can't compile #{name} instruction"
   end
-end
-
-class Wrapper
 end
 
 class Array
@@ -136,12 +145,16 @@ end
 
 sum = lambda do
   i = 2
-  a = 99999
+  a = 9999
+  r = 0
   while i < a
     i += 2
     a += 1
+    if a == 0
+      1
+    end
   end
-  i
+  a
 end
 
 sumo = optimized &sum
