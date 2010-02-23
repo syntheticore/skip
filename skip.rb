@@ -1,17 +1,15 @@
 #!/usr/bin/env ruby
 #
 #  Created by Björn Breitgoff on 23.2.2010.
-#
-
-require 'rubygems'
-require 'benchmark'
 
 
 # optimized takes a block and returns a jit optimized version of it
 # The code may only use Numerical classes and arrays
 
 def optimized &b
+  raise "Block argument missing" unless block_given?
   begin
+    require 'rubygems'
     require 'jit'
     require 'parse_tree'
     $jit_types = {
@@ -150,53 +148,34 @@ class Array
 end
 
 
-sum = lambda do |i,a|
-  r = 0
-  while i < a
-    i += 2
-    a += 1
-    r += 1 if a % 2 == 0
+if __FILE__ == $0
+  require 'benchmark'
+  
+  sum = lambda do |i,a|
+    r = 0
+    while i < a
+      i += 2
+      a += 1
+      r += 1 if a % 2 == 0
+    end
+    r
   end
-  r
+
+  sumo = optimized &sum
+
+  puts sumo[2,9999]
+  puts  sum[2,9999]
+  puts "-" * 60
+  puts sumo[50,5000]
+  puts  sum[50,5000]
+
+  n = 100
+  Benchmark.bm do |x|
+    x.report{ n.times{ sum[2,99999] } }
+    GC.start
+    x.report{ n.times{ sumo[2,99999] } }
+  end
 end
-
-#fib = lambda do |n,m|
-#  a = 2
-#  b = 8
-#  c = 1
-#  i = 0
-#  while i < n
-#    c = a + b / 2
-#    a = b
-#    b = c
-#    i += 1
-#  end
-#  c
-#end
-
-
-#fibo = optimized &fib
-sumo = optimized &sum
-
-#puts  fib[42,1]
-#puts fibo[42,1]
-#puts  fib[42,1]
-#puts fibo[42,1]
-
-puts sumo[2,9999]
-puts  sum[2,9999]
-puts "-" * 60
-puts sumo[50,5000]
-puts  sum[50,5000]
-
-
-n = 100
-Benchmark.bm do |x|
-  x.report{ n.times{ sum[2,99999] } }
-  GC.start
-  x.report{ n.times{ sumo[2,99999] } }
-end
-
 
 
 
