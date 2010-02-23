@@ -40,10 +40,8 @@ def optimized &b
         signature = {args.map{|a| $jit_types[a.class] } => $jit_types[retval.class]}
         # compile syntax tree to machine code
         jit = JIT::Function.build(signature) do |f|
-          # map ruby args to their jit versions
-          jit_vars = {}
           # compile parse tree recursively
-          r = compile block, f, jit_vars, num_args_given
+          r = compile block, f, {}, num_args_given
           # return the last result produced
           f.return r
         end
@@ -59,8 +57,9 @@ def optimized &b
       end
     end
   rescue LoadError
+    # return unmodified block if dependencies are not met
     puts "WARNING: ruby-libjit and ParseTree gems are required for JIT compilation"
-    b # return the unmodified block if libjit or parse_tree is not available
+    b
   end
 end
 
@@ -109,7 +108,6 @@ def compile token, f, jit_vars, num_args
   when :array
     token.map{|expr| puts expr.inspect; compile expr, f, jit_vars, num_args }
   when :block
-    r = nil
     for expr in token
       r = compile expr, f, jit_vars, num_args
     end
@@ -157,14 +155,33 @@ sum = lambda do |i,a|
   while i < a
     i += 2
     a += 1
-    if a % 2 == 0
-      r += 1
-    end
+    r += 1 if a % 2 == 0
   end
   r
 end
 
+#fib = lambda do |n,m|
+#  a = 2
+#  b = 8
+#  c = 1
+#  i = 0
+#  while i < n
+#    c = a + b / 2
+#    a = b
+#    b = c
+#    i += 1
+#  end
+#  c
+#end
+
+
+#fibo = optimized &fib
 sumo = optimized &sum
+
+#puts  fib[42,1]
+#puts fibo[42,1]
+#puts  fib[42,1]
+#puts fibo[42,1]
 
 puts sumo[2,9999]
 puts  sum[2,9999]
@@ -175,9 +192,9 @@ puts  sum[50,5000]
 
 n = 100
 Benchmark.bm do |x|
-  x.report{ n.times{ sum[2,9999] } }
+  x.report{ n.times{ sum[2,99999] } }
   GC.start
-  x.report{ n.times{ sumo[2,9999] } }
+  x.report{ n.times{ sumo[2,99999] } }
 end
 
 
