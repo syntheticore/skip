@@ -82,13 +82,13 @@ def compile token, f, jit_vars, num_args
     nil
   when :lit  # literal
     value = token.first
-    lit = f.value( $jit_types[value.class], value )
-    lit
+    f.value( $jit_types[value.class], value )
   when :dvar  # local variable
     name = token.first
     # we need to create the var if it doesn't exist, 
     # because it can be referenced before it is assigned to
     jit_vars[name] ||= f.value($jit_types[Fixnum], 0)
+    jit_vars[name]
   when :dasgn, :dasgn_curr  # assignment to local variable
     varname, expr = token
     if expr
@@ -121,6 +121,8 @@ def compile token, f, jit_vars, num_args
     case method.to_s
     when *%w{ + - * / < > % == }
       obj.send method, args.first
+    else
+      puts "WARNING: Calling #{method} is not supported"
     end
   when :if
     cond, code, retval = token
@@ -138,17 +140,29 @@ def compile token, f, jit_vars, num_args
     }.end
     retval
   when :iter
-    puts token.inspect
-    meth, unknown, code = token
+    meth, param, code = token
     dummy, receiver, meth = meth
+    if param
+      param = compile param, f, jit_vars, num_args 
+      param = jit_vars[param] = f.value(:INT,0)
+    end
     receiver = compile receiver, f, jit_vars, num_args
     case meth
     when :times 
+      param ||= f.value(:INT,0)
+      f.while{ param < receiver }.do{
+        compile code, f, jit_vars, num_args
+        param.store param + 1
+      }.end
+    when :each
       i = f.value(:INT, 0)
-      f.while{ i < receiver }.do{
+      f.while{ i < receiver.size }.do{
+        #param.store receiver[i]
         compile code, f, jit_vars, num_args
         i.store i + 1
       }.end
+    else
+      puts "WARNING: Can't compile #{meth} iterator"
     end
   else
     puts "WARNING: Can't compile #{name} instruction"
@@ -168,22 +182,25 @@ end
 if __FILE__ == $0
   require 'benchmark'
   
-  sum = lambda do |i,a|
-    a.times{ i += 1 }
-    i
+  sum = lambda do |n|
+    a = 0
+    n.times do |i|
+      a += 1
+    end
+    a
   end
 
   sumo = optimized &sum
 
   puts "-" * 60
-  puts sumo[0,5000]
-  puts sumo[0,5000]
+  puts sumo[20]
+  puts sumo[20]
 
 #  n = 2
 #  Benchmark.bm do |x|
-#    x.report{ n.times{ sum[99999] } }
+#    x.report{ n.times{ sum[0,99999] } }
 #    GC.start
-#    x.report{ n.times{ sumo[99999] } }
+#    x.report{ n.times{ sumo[0,99999] } }
 #  end
 end
 
