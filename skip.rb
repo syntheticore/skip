@@ -155,8 +155,10 @@ end
 if __FILE__ == $0
   require 'benchmark'
   
-  sum = lambda do |i,a|
+  sum = lambda do
     r = 0
+    i = 2
+    a = 5000
     while i < a
       i += 2
       a += 1
@@ -168,8 +170,8 @@ if __FILE__ == $0
   sumo = optimized &sum
 
   puts "-" * 60
-  puts sumo[2,5000]
-  puts sumo[2,5000]
+  puts sumo[]
+  puts sumo[]
 
 #  n = 2
 #  Benchmark.bm do |x|
