@@ -17,7 +17,7 @@ h3. Skip
       r
     end
     
-    opti = optimized &func
+    opti = Skip::optimized &func
 
     n = 100
     Benchmark.bm do |x|
