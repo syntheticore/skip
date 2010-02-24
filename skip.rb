@@ -4,10 +4,25 @@
 
 
 module Skip
-  # optimized takes a block and returns a jit optimized version of it
+  # optimized can either be called with a block, to return  a jitted version of it, 
+  # or with a class and a methodname, to override the given method with an optimized one
+  def self.optimized klass=nil, meth=nil, &b
+    if klass and meth
+      lambda = optimize klass, meth
+    elsif block_given?
+      # inject block into wrapper class
+      wrapper = Class.new
+      wrapper.send :define_method, :code, b
+      num_args_required = [b.arity, 0].max
+      optimize wrapper, :code
+    else
+      raise "Optimized takes either a class and a methodname or a block"
+    end
+  end
+  
+  # optimize takes a class and a method name and returns a jit optimized lambda 
   # The code may only use Numerical classes and arrays
-  def self.optimized &b
-    raise "Block argument missing" unless block_given?
+  def self.optimize klass, meth
     begin
       require 'rubygems'
       require 'jit'
@@ -19,28 +34,20 @@ module Skip
       Thread.current[:jit_result_info] ||= {}
       name = Object.new
       lambda do |*args|
-        # check that the arguments given to the lambda
-        # match those of the original definition
-        num_required_args = [b.arity, 0].max
-        num_args_given = args.size
-        raise ArgumentError, "Wrong number of arguments (#{num_args_given} for #{num_required_args})" if num_args_given != num_required_args
         # on first run...
         if !Thread.current[:jit_result_info][name]
-          # inject block into wrapper class
-          wrapper = Class.new
-          wrapper.send :define_method, :code, b
-          # build parse tree from that
-          sexp = ParseTree.translate wrapper, :code
+          # build parse tree from given method
+          sexp = ParseTree.translate klass, meth
           block = sexp.find{|t| t.is_a? Array }
           puts sexp.inspect
           # run original code to determine return type
-          retval = yield *args
+          retval = klass.new.send meth, *args
           # build a signature to match the types of the first run
           signature = {args.map{|a| $jit_types[a.class] } => $jit_types[retval.class]}
           # compile syntax tree to machine code
           jit = JIT::Function.build(signature) do |f|
             # compile parse tree recursively
-            r = compile block, f, {}, num_args_given
+            r = compile block, f, {}, args.size
             # return the last result produced
             f.return r
           end
@@ -62,14 +69,19 @@ module Skip
     end
   end
 
+  # compile takes an AST token and compiles 
+  # it recursively into the given function
   def self.compile token, f, jit_vars, num_args
+    recurse = lambda{|var| eval "compile #{var}, f, jit_vars, num_args" }
     name = token.shift
     puts name
     case name
     when :bmethod  # lambda definition
       signature, code = token
-      compile signature, f, jit_vars, num_args if signature
-      compile code, f, jit_vars, num_args
+      recurse['signature']
+      recurse['code']
+      #compile signature, f, jit_vars, num_args if signature
+      #compile code, f, jit_vars, num_args
     when :masgn  # init multiple block parameters
       puts token.inspect
       params, unknown, unknown = token
@@ -154,9 +166,12 @@ module Skip
           param.store param + 1
         }.end
       when :each
+        array_type = JIT::Array.new(JIT::Type::INT, receiver.size)
+        array_instance = array_type.create(f)
+        receiver.each_with_index{|v,i| array_instance[i] = v }
         i = f.value(:INT, 0)
         f.while{ i < receiver.size }.do{
-          #param.store receiver[i]
+          param.store array_instance[0] + i
           compile code, f, jit_vars, num_args
           i.store i + 1
         }.end
@@ -175,11 +190,12 @@ if __FILE__ == $0
   $debug = true
   
   sum = lambda do |n|
-    a = 0
-    n.times do |i|
-      a += 1
+    a = []
+    n.times do |e|
+      a << e
     end
-    a
+    a[n-1]
+    7
   end
 
   sumo = Skip::optimized &sum
