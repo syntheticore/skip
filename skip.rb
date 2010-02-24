@@ -32,6 +32,7 @@ def optimized &b
         # build parse tree from that
         sexp = ParseTree.translate wrapper, :code
         block = sexp.drop_level
+        puts sexp.inspect
         # run original code to determine return type
         retval = yield *args
         # build a signature to match the types of the first run
@@ -43,7 +44,7 @@ def optimized &b
           # return the last result produced
           f.return r
         end
-        puts jit.dump
+        #puts jit.dump
         Thread.current[:jit_result_info][name] = [retval, jit]
         retval
       else
@@ -62,7 +63,7 @@ def optimized &b
 end
 
 def compile token, f, jit_vars, num_args
-  puts token.inspect
+  #puts token.inspect
   name = token.shift
   puts name
   case name
@@ -70,7 +71,8 @@ def compile token, f, jit_vars, num_args
     signature, code = token
     compile signature, f, jit_vars, num_args if signature
     compile code, f, jit_vars, num_args
-  when :masgn  # init block parameters
+  when :masgn  # init multiple block parameters
+    puts token.inspect
     params, unknown, unknown = token
     params = compile params, f, jit_vars, num_args
     args = (0...num_args).map{|i| f.param i }
@@ -100,11 +102,13 @@ def compile token, f, jit_vars, num_args
       jv
     else
       # var is a block parameter
-      # just return the name so that :masgn can map it to the jit params
+      # init it here in case it is the only block param
+      jit_vars[varname] = f.param 0
+      # return the name so that :masgn can map it to the jit params in case of multiple params
       varname
     end
   when :array
-    token.map{|expr| puts expr.inspect; compile expr, f, jit_vars, num_args }
+    token.map{|expr| compile expr, f, jit_vars, num_args }
   when :block
     for expr in token
       r = compile expr, f, jit_vars, num_args
@@ -163,18 +167,16 @@ if __FILE__ == $0
 
   sumo = optimized &sum
 
-  puts sumo[2,9999]
-  puts  sum[2,9999]
   puts "-" * 60
-  puts sumo[50,5000]
-  puts  sum[50,5000]
+  puts sumo[2,5000]
+  puts sumo[2,5000]
 
-  n = 100
-  Benchmark.bm do |x|
-    x.report{ n.times{ sum[2,99999] } }
-    GC.start
-    x.report{ n.times{ sumo[2,99999] } }
-  end
+#  n = 2
+#  Benchmark.bm do |x|
+#    x.report{ n.times{ sum[99999] } }
+#    GC.start
+#    x.report{ n.times{ sumo[99999] } }
+#  end
 end
 
 
