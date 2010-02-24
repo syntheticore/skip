@@ -89,7 +89,7 @@ def compile token, f, jit_vars, num_args
     # we need to create the var if it doesn't exist, 
     # because it can be referenced before it is assigned to
     jit_vars[name] ||= f.value($jit_types[Fixnum], 0)
-  when :dasgn_curr  # assignment to local variable
+  when :dasgn, :dasgn_curr  # assignment to local variable
     varname, expr = token
     if expr
       expr = compile expr, f, jit_vars, num_args
@@ -137,6 +137,19 @@ def compile token, f, jit_vars, num_args
       compile code, f, jit_vars, num_args
     }.end
     retval
+  when :iter
+    puts token.inspect
+    meth, unknown, code = token
+    dummy, receiver, meth = meth
+    receiver = compile receiver, f, jit_vars, num_args
+    case meth
+    when :times 
+      i = f.value(:INT, 0)
+      f.while{ i < receiver }.do{
+        compile code, f, jit_vars, num_args
+        i.store i + 1
+      }.end
+    end
   else
     puts "WARNING: Can't compile #{name} instruction"
   end
@@ -155,23 +168,16 @@ end
 if __FILE__ == $0
   require 'benchmark'
   
-  sum = lambda do
-    r = 0
-    i = 2
-    a = 5000
-    while i < a
-      i += 2
-      a += 1
-      r += 1 if a % 2 == 0
-    end
-    r
+  sum = lambda do |i,a|
+    a.times{ i += 1 }
+    i
   end
 
   sumo = optimized &sum
 
   puts "-" * 60
-  puts sumo[]
-  puts sumo[]
+  puts sumo[0,5000]
+  puts sumo[0,5000]
 
 #  n = 2
 #  Benchmark.bm do |x|
