@@ -5,6 +5,10 @@
 
 module Skip
 
+  JIT_TYPES = {
+    Fixnum => :INT,
+    Float => :DOUBLE }
+    
   # takes a block and returns a JIT optimized version of it
   def self.optimized &b
     # inject block into wrapper class
@@ -22,9 +26,6 @@ module Skip
       require 'rubygems'
       require 'jit'
       require 'parse_tree'
-      $jit_types = {
-        Fixnum => :INT,
-        Float => :DOUBLE }
       # find a name for preserving runtime information about the code
       Thread.current[:jit_result_info] ||= {}
       name = Object.new
@@ -37,7 +38,7 @@ module Skip
           # run original code to determine return type
           retval = klass.new.send meth, *args
           # build a signature to match the types of the first run
-          signature = { args.map{|a| $jit_types[a.class]} => $jit_types[retval.class] }
+          signature = { args.map{|a| JIT_TYPES[a.class]} => JIT_TYPES[retval.class] }
           # compile syntax tree to machine code
           jit = JIT::Function.build(signature) do |f|
             # compile parse tree recursively
@@ -108,12 +109,12 @@ module Skip
       nil
     when :lit  # literal
       value = token.first
-      f.value( $jit_types[value.class], value )
+      f.value( JIT_TYPES[value.class], value )
     when :dvar, :lvar  # local variable
       name = token.first
       # we need to create the var if it doesn't exist, 
       # because it can be referenced before it is assigned to
-      jit_vars[name] ||= f.value($jit_types[Fixnum], 0)
+      jit_vars[name] ||= f.value(JIT_TYPES[Fixnum], 0)
       jit_vars[name]
     when :dasgn, :lasgn, :dasgn_curr  # assignment to local variable
       varname, expr = token
