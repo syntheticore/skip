@@ -81,11 +81,11 @@ module Skip
     case name
     when :bmethod  # lambda definition
       signature, code = token
-      recurse['signature'] if signature
-      recurse['code']
+      recurse[:signature] if signature
+      recurse[:code]
     when :masgn  # init multiple block parameters
       params, unknown, unknown = token
-      params = recurse['params']
+      params = recurse[:params]
       args = (0...num_args).map{|i| f.param i }
       params.zip(args) do |p,a|
         jit_vars[p] = a
@@ -103,7 +103,7 @@ module Skip
     when :dasgn, :dasgn_curr  # assignment to local variable
       varname, expr = token
       if expr
-        expr = recurse['expr']
+        expr = recurse[:expr]
         jv = jit_vars[varname]
         if jv
           jv.store expr
@@ -119,16 +119,16 @@ module Skip
         varname
       end
     when :array
-      token.map{|expr| recurse['expr'] }
+      token.map{|expr| recurse[:expr] }
     when :block
       for expr in token
-        r = recurse['expr']
+        r = recurse[:expr]
       end
       r
     when :call
       obj, method, args = token
-      obj = recurse['obj']
-      args = recurse['args']
+      obj = recurse[:obj]
+      args = recurse[:args]
       case method.to_s
       when *%w{ + - * / < > % == }
         obj.send method, args.first
@@ -137,32 +137,32 @@ module Skip
       end
     when :if
       cond, code, retval = token
-      cond = recurse['cond']
+      cond = recurse[:cond]
       f.if( cond ) {
-        recurse['code']
+        recurse[:code]
       }.end
     when :while
       cond, code, retval = token
       dummy, lhs, op, rhs = cond
-      lhs = recurse['lhs']
-      rhs = recurse['rhs']
+      lhs = recurse[:lhs]
+      rhs = recurse[:rhs]
       f.while{ lhs.send op, rhs.first }.do{
-        recurse['code']
+        recurse[:code]
       }.end
       retval
     when :iter
       meth, param, code = token
       dummy, receiver, meth = meth
       if param
-        param = recurse['param']
+        param = recurse[:param]
         param = jit_vars[param] = f.value(:INT,0)
       end
-      receiver = recurse['receiver']
+      receiver = recurse[:receiver]
       case meth
       when :times 
         param ||= f.value(:INT,0)
         f.while{ param < receiver }.do{
-          recurse['code']
+          recurse[:code]
           param.store param + 1
         }.end
       when :each
@@ -172,7 +172,7 @@ module Skip
         i = f.value(:INT, 0)
         f.while{ i < receiver.size }.do{
           param.store array_instance[0] + i
-          recurse['code']
+          recurse[:code]
           i.store i + 1
         }.end
       else
