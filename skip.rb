@@ -22,7 +22,7 @@ module Skip
     jit_lambda wrapper, :code
   end
   
-  # takes a class and a method name and returns a jit optimized lambda 
+  # takes a class and a method name and returns a JIT optimized lambda 
   # The code may only use Numerical classes and arrays
   def self.jit_lambda klass, meth
     begin
@@ -83,6 +83,19 @@ module Skip
       signature, code = token
       recurse[:signature] if signature
       recurse[:code]
+    when :block
+      for expr in token
+        r = recurse[:expr]
+      end
+      r
+    when :fbody, :scope
+      puts token.inspect
+      scope = token.first
+      recurse[:scope]
+    when :args
+      for varname in token
+        jit_vars[varname] ||= f.value($jit_types[Fixnum], 0)
+      end
     when :masgn  # init multiple block parameters
       params, unknown, unknown = token
       params = recurse[:params]
@@ -94,7 +107,7 @@ module Skip
     when :lit  # literal
       value = token.first
       f.value( $jit_types[value.class], value )
-    when :dvar  # local variable
+    when :dvar, :lvar  # local variable
       name = token.first
       # we need to create the var if it doesn't exist, 
       # because it can be referenced before it is assigned to
@@ -120,11 +133,6 @@ module Skip
       end
     when :array
       token.map{|expr| recurse[:expr] }
-    when :block
-      for expr in token
-        r = recurse[:expr]
-      end
-      r
     when :call
       obj, method, args = token
       obj = recurse[:obj]
@@ -190,28 +198,28 @@ if __FILE__ == $0
   $debug = true
   
   class A
-    def blub
-      i = 0
-      5000.times{ i += 1 }
-      i
+    def blub a, b
+      b.times{|i| a += i }
+      a
     end
   end
 
   puts "-" * 60
-  r = A.new.blub
+  
+  r = A.new.blub 3,200
   Skip::optimize A, :blub
-  puts A.new.blub
+  puts A.new.blub 3,200
   puts r
 
-  n = 200
-  Benchmark.bm do |x|
-    GC.start
-    x.report{ n.times{ A.new.blub } }
-    
-    Skip::optimize A, :blub
-    GC.start
-    x.report{ n.times{ A.new.blub } }
-  end
+#  n = 200
+#  Benchmark.bm do |x|
+#    GC.start
+#    x.report{ n.times{ A.new.blub } }
+#    
+#    Skip::optimize A, :blub
+#    GC.start
+#    x.report{ n.times{ A.new.blub } }
+#  end
 end
 
 
