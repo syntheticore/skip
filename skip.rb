@@ -40,7 +40,7 @@ module Skip
         if !Thread.current[:jit_result_info][name]
           # build parse tree from given method
           sexp = ParseTree.translate klass, meth
-          block = sexp.find{|t| t.is_a? Array }
+          block = sexp#.find{|t| t.is_a? Array }
           #puts sexp.inspect
           # run original code to determine return type
           retval = klass.new.send meth, *args
@@ -79,19 +79,25 @@ module Skip
     name = token.shift
     puts name
     case name
-    when :bmethod  # lambda definition
-      signature, code = token
-      recurse[:signature] if signature
-      recurse[:code]
+    when :defn
+      name, body = token
+      recurse[:body]
+    when :fbody, :scope
+      scope = token.first
+      recurse[:scope]
     when :block
       for expr in token
         r = recurse[:expr]
       end
       r
-    when :fbody, :scope
+    when :return
       puts token.inspect
-      scope = token.first
-      recurse[:scope]
+      expr = token.first
+      f.return recurse[:expr]
+    when :bmethod  # lambda definition
+      signature, code = token
+      recurse[:signature] if signature
+      recurse[:code]
     when :args
       for varname in token
         jit_vars[varname] ||= f.value($jit_types[Fixnum], 0)
@@ -198,17 +204,18 @@ if __FILE__ == $0
   $debug = true
   
   class A
-    def blub a, b
-      b.times{|i| a += i }
-      a
+    def blub a
+      return 4 if a == 0
+      5
+      #a + blub(a-1)
     end
   end
 
   puts "-" * 60
   
-  r = A.new.blub 3,200
+  r = A.new.blub 3
   Skip::optimize A, :blub
-  puts A.new.blub 3,200
+  puts A.new.blub 0
   puts r
 
 #  n = 200
