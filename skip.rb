@@ -86,22 +86,27 @@ module Skip
       scope = token.first
       recurse[:scope]
     when :block
+      puts token.inspect
       for expr in token
         r = recurse[:expr]
       end
       r
+    when :args
+#      for varname in token
+#        jit_vars[varname] ||= f.value($jit_types[Fixnum], 0)
+#      end
+      params = token
+      args = (0...num_args).map{|i| f.param i }
+      params.zip(args) do |p,a|
+        jit_vars[p] = a
+      end
     when :return
-      puts token.inspect
       expr = token.first
-      f.return recurse[:expr]
+      f.insn_return recurse[:expr]
     when :bmethod  # lambda definition
       signature, code = token
       recurse[:signature] if signature
       recurse[:code]
-    when :args
-      for varname in token
-        jit_vars[varname] ||= f.value($jit_types[Fixnum], 0)
-      end
     when :masgn  # init multiple block parameters
       params, unknown, unknown = token
       params = recurse[:params]
@@ -119,7 +124,7 @@ module Skip
       # because it can be referenced before it is assigned to
       jit_vars[name] ||= f.value($jit_types[Fixnum], 0)
       jit_vars[name]
-    when :dasgn, :dasgn_curr  # assignment to local variable
+    when :dasgn, :lasgn, :dasgn_curr  # assignment to local variable
       varname, expr = token
       if expr
         expr = recurse[:expr]
@@ -149,6 +154,10 @@ module Skip
       else
         puts "WARNING: Calling #{method} is not supported"
       end
+    when :fcall
+      function_name, args = token
+      args = recurse[:args]
+      f.insn_call("", f, 0, *args)
     when :if
       cond, code, retval = token
       cond = recurse[:cond]
@@ -205,27 +214,30 @@ if __FILE__ == $0
   
   class A
     def blub a
-      return 4 if a == 0
-      5
-      #a + blub(a-1)
+      i = 0
+      a.times{ i += 1 }
+      i *= 2
+      i
     end
   end
 
   puts "-" * 60
   
-  r = A.new.blub 3
+  v = 5000
   Skip::optimize A, :blub
-  puts A.new.blub 0
-  puts r
+  puts A.new.blub v
+  puts A.new.blub v
+  puts A.new.blub v
 
-#  n = 200
+#  n = 300
 #  Benchmark.bm do |x|
 #    GC.start
-#    x.report{ n.times{ A.new.blub } }
+#    x.report{ n.times{ A.new.blub v } }
 #    
 #    Skip::optimize A, :blub
+#    puts A.new.blub v
 #    GC.start
-#    x.report{ n.times{ A.new.blub } }
+#    x.report{ n.times{ A.new.blub v } }
 #  end
 end
 
