@@ -5,26 +5,19 @@
 
 module Skip
 
-  # override the given method with a JIT optimized one
-  def self.optimize klass, meth
-    alias_name = meth.to_s + "_original"
-    lambda = jit_lambda klass, alias_name
-    klass.send :alias_method, alias_name, meth
-    klass.send :define_method, meth, lambda
-  end
-  
   # takes a block and returns a JIT optimized version of it
   def self.optimized &b
     # inject block into wrapper class
     wrapper = Class.new
     wrapper.send :define_method, :code, b
-    num_args_required = [b.arity, 0].max
-    jit_lambda wrapper, :code
+    optimize wrapper, :code
+    w = wrapper.new
+    lambda{|*args| w.code *args }
   end
   
-  # takes a class and a method name and returns a JIT optimized lambda 
+  # override the given method with a JIT optimized one
   # The code may only use Numerical classes and arrays
-  def self.jit_lambda klass, meth
+  def self.optimize klass, meth
     begin
       require 'rubygems'
       require 'jit'
@@ -40,7 +33,7 @@ module Skip
         if !Thread.current[:jit_result_info][name]
           # build parse tree from given method
           sexp = ParseTree.translate klass, meth
-          puts sexp.inspect
+          #puts sexp.inspect
           # run original code to determine return type
           retval = klass.new.send meth, *args
           # build a signature to match the types of the first run
@@ -63,6 +56,7 @@ module Skip
           retval, jit  = Thread.current[:jit_result_info][name]
           jit.apply *args
         end
+        klass.send :define_method, meth, l
       end
     rescue LoadError
       # return unmodified block if dependencies are not met
@@ -75,8 +69,9 @@ module Skip
   # it recursively into the given function
   def self.compile token, f, jit_vars, num_args
     recurse = lambda{|var| eval "compile #{var}, f, jit_vars, num_args" }
+    puts token.inspect
     name = token.shift
-    #puts name
+    puts name
     case name
     when :defn
       name, body = token
@@ -90,9 +85,6 @@ module Skip
       end
       r
     when :args
-#      for varname in token
-#        jit_vars[varname] ||= f.value($jit_types[Fixnum], 0)
-#      end
       params = token
       args = (0...num_args).map{|i| f.param i }
       params.zip(args) do |p,a|
@@ -107,6 +99,7 @@ module Skip
       recurse[:code]
     when :masgn  # init multiple block parameters
       params, unknown, unknown = token
+      puts token.inspect
       params = recurse[:params]
       args = (0...num_args).map{|i| f.param i }
       params.zip(args) do |p,a|
@@ -206,6 +199,7 @@ module Skip
 end
 
 
+
 if __FILE__ == $0
   require 'benchmark'
   $debug = true
@@ -219,23 +213,24 @@ if __FILE__ == $0
 
   puts "-" * 60
   
-  v = 500
-#  Skip::optimize A, :blub
-#  puts A.new.blub v
-#  puts A.new.blub v
-#  puts A.new.blub v
-
+  v = 6
+  Skip::optimize A, :blub
   a = A.new
-  n = 200
-  Benchmark.bm do |x|
-    GC.start
-    x.report{ n.times{ a.blub v } }
-    
-    Skip::optimize A, :blub
-    puts A.new.blub v
-    GC.start
-    #x.report{ n.times{ a.blub v } }
-  end
+  puts a.blub v
+  puts a.blub v
+  puts a.blub v
+
+#  a = A.new
+#  n = 200
+#  Benchmark.bm do |x|
+#    GC.start
+#    x.report{ n.times{ a.blub v } }
+#    
+#    Skip::optimize A, :blub
+#    puts a.blub v
+#    GC.start
+#    #x.report{ n.times{ a.blub v } }
+#  end
 end
 
 
