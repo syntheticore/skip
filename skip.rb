@@ -29,14 +29,18 @@ module Skip
       # find a name for preserving runtime information about the code
       Thread.current[:jit_result_info] ||= {}
       name = Object.new
-      lambda do |*args|
-        # on first run...
-        if !Thread.current[:jit_result_info][name]
+      l = lambda do |*args|
+        if Thread.current[:testrun]
+          klass.new.send meth.to_s + "_original", *args
+        elsif !Thread.current[:jit_result_info][name]
+          # on first run...
           # build parse tree from given method
-          sexp = ParseTree.translate klass, meth
+          sexp = ParseTree.translate klass, meth.to_s + "_original"
           #puts sexp.inspect
           # run original code to determine return type
-          retval = klass.new.send meth, *args
+          Thread.current[:testrun] = true
+          retval = klass.new.send meth.to_s + "_original", *args
+          Thread.current[:testrun] = false
           # build a signature to match the types of the first run
           signature = { args.map{|a| JIT_TYPES[a.class]} => JIT_TYPES[retval.class] }
           # compile syntax tree to machine code
@@ -57,8 +61,9 @@ module Skip
           retval, jit  = Thread.current[:jit_result_info][name]
           jit.apply *args
         end
-        klass.send :define_method, meth, l
       end
+      klass.send :alias_method, meth.to_s + "_original", meth
+      klass.send :define_method, meth, l
     rescue LoadError
       # return unmodified block if dependencies are not met
       puts "WARNING: ruby-libjit and ParseTree gems are required for JIT compilation"
@@ -70,9 +75,9 @@ module Skip
   # it recursively into the given function
   def self.compile token, f, jit_vars, num_args
     recurse = lambda{|var| eval "compile #{var}, f, jit_vars, num_args" }
-    puts token.inspect
+    #puts token.inspect
     name = token.shift
-    puts name
+    #puts name
     case name
     when :defn
       name, body = token
@@ -141,7 +146,7 @@ module Skip
       obj = recurse[:obj]
       args = recurse[:args]
       case method.to_s
-      when *%w{ + - * / < > % == }
+      when *%w{ + - * / < > % == <= >= }
         obj.send method, args.first
       else
         puts "WARNING: Calling #{method} is not supported"
@@ -203,35 +208,38 @@ end
 
 if __FILE__ == $0
   require 'benchmark'
-  $debug = true
+  #$debug = true
   
   class A
     def blub a
       return 0 if a == 0
-      a + blub(a-1)
+      return 1 if a == 1
+      blub(a-1) + blub(a-2)
     end
   end
 
   puts "-" * 60
   
-  v = 6
-  Skip::optimize A, :blub
+  v = 18
+#  Skip::optimize A, :blub
   a = A.new
-  puts a.blub v
-  puts a.blub v
-  puts a.blub v
+#  puts a.blub v
+#  puts a.blub v
+#  puts a.blub v
 
-#  a = A.new
-#  n = 200
-#  Benchmark.bm do |x|
-#    GC.start
-#    x.report{ n.times{ a.blub v } }
-#    
-#    Skip::optimize A, :blub
-#    puts a.blub v
-#    GC.start
-#    #x.report{ n.times{ a.blub v } }
-#  end
+  n = 100
+  Benchmark.bm do |x|
+    GC.start
+    r = x.report{ n.times{ a.blub v } }
+    
+    Skip::optimize A, :blub
+    A.new.blub 1
+    
+    GC.start
+    jit = x.report{ n.times{ a.blub v } }
+    
+    puts "#{(r.real / jit.real).round} times faster"
+  end
 end
 
 
