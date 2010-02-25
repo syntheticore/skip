@@ -40,8 +40,7 @@ module Skip
         if !Thread.current[:jit_result_info][name]
           # build parse tree from given method
           sexp = ParseTree.translate klass, meth
-          block = sexp#.find{|t| t.is_a? Array }
-          #puts sexp.inspect
+          puts sexp.inspect
           # run original code to determine return type
           retval = klass.new.send meth, *args
           # build a signature to match the types of the first run
@@ -49,7 +48,7 @@ module Skip
           # compile syntax tree to machine code
           jit = JIT::Function.build(signature) do |f|
             # compile parse tree recursively
-            r = Skip::compile block, f, {}, args.size
+            r = Skip::compile sexp, f, {}, args.size
             # return the last result produced
             f.return r
           end
@@ -77,7 +76,7 @@ module Skip
   def self.compile token, f, jit_vars, num_args
     recurse = lambda{|var| eval "compile #{var}, f, jit_vars, num_args" }
     name = token.shift
-    puts name
+    #puts name
     case name
     when :defn
       name, body = token
@@ -86,7 +85,6 @@ module Skip
       scope = token.first
       recurse[:scope]
     when :block
-      puts token.inspect
       for expr in token
         r = recurse[:expr]
       end
@@ -214,31 +212,30 @@ if __FILE__ == $0
   
   class A
     def blub a
-      i = 0
-      a.times{ i += 1 }
-      i *= 2
-      i
+      return 0 if a == 0
+      a + blub(a-1)
     end
   end
 
   puts "-" * 60
   
-  v = 5000
-  Skip::optimize A, :blub
-  puts A.new.blub v
-  puts A.new.blub v
-  puts A.new.blub v
+  v = 500
+#  Skip::optimize A, :blub
+#  puts A.new.blub v
+#  puts A.new.blub v
+#  puts A.new.blub v
 
-#  n = 300
-#  Benchmark.bm do |x|
-#    GC.start
-#    x.report{ n.times{ A.new.blub v } }
-#    
-#    Skip::optimize A, :blub
-#    puts A.new.blub v
-#    GC.start
-#    x.report{ n.times{ A.new.blub v } }
-#  end
+  a = A.new
+  n = 200
+  Benchmark.bm do |x|
+    GC.start
+    x.report{ n.times{ a.blub v } }
+    
+    Skip::optimize A, :blub
+    puts A.new.blub v
+    GC.start
+    #x.report{ n.times{ a.blub v } }
+  end
 end
 
 
