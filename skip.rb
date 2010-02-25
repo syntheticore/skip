@@ -39,7 +39,7 @@ module Skip
           #puts sexp.inspect
           # run original code to determine return type
           Thread.current[:testrun] = true
-          retval = klass.new.send meth.to_s + "_original", *args
+          retval = klass.new.send meth, *args
           Thread.current[:testrun] = false
           # build a signature to match the types of the first run
           signature = { args.map{|a| JIT_TYPES[a.class]} => JIT_TYPES[retval.class] }
@@ -212,31 +212,31 @@ if __FILE__ == $0
   #$debug = true
   
   class A
-    def blub a
+    def fib a
       return 0 if a == 0
       return 1 if a == 1
-      blub(a-1) + blub(a-2)
+      fib(a-1) + fib(a-2)
     end
   end
 
   puts "-" * 60
   
-  v = 18
-#  Skip::optimize A, :blub
+  v = 19
+#  Skip::optimize A, :fib
   a = A.new
-#  puts a.blub v
-#  puts a.blub v
-#  puts a.blub v
+#  puts a.fib v
+#  puts a.fib v
+#  puts a.fib v
 
   n = 100
   Benchmark.bm do |x|
     GC.start
-    r = x.report{ n.times{ a.blub v } }
+    r = x.report{ n.times{ a.fib v } }
     
-    Skip::optimize A, :blub, 1
+    Skip::optimize A, :fib, 1
     
     GC.start
-    jit = x.report{ n.times{ a.blub v } }
+    jit = x.report{ n.times{ a.fib v } }
     
     puts "#{(r.real / jit.real).round} times faster"
   end

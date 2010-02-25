@@ -21,14 +21,52 @@ h3. Skip
 
     n = 100
     Benchmark.bm do |x|
-      x.report{ n.times{ func[2,99999] } }
       GC.start
-      x.report{ n.times{ opti[2,99999] } }
+      r = x.report{ n.times{ func[2,99999] } }
+      GC.start
+      jit = x.report{ n.times{ opti[2,99999] } }
+      puts "#{(r.real / jit.real).round} times faster"
     end
     
-      user     system      total        real
- 32.030000   0.020000  32.050000 ( 32.049772)
-  0.440000   0.000000   0.440000 (  0.439581)
+         user     system      total        real
+    32.030000   0.020000  32.050000 ( 32.049772)
+     0.440000   0.000000   0.440000 (  0.439581)
+    73 times faster
+  </code>
+</pre>
+
+or
+
+<pre>
+  <code>
+    require "rubygems"
+    require "skip"
+    
+    class A
+      def fib n
+        return 0 if n == 0
+        return 1 if n == 1
+        fib(n-1) + fib(n-2)
+      end
+    end
+
+    n = 100
+    v = 19
+    a = A.new
+    
+    Benchmark.bm do |x|
+      GC.start
+      r = x.report{ n.times{ a.fib v } }
+      Skip::optimize A, :fib, 1
+      GC.start
+      jit = x.report{ n.times{ a.fib v } }
+      puts "#{(r.real / jit.real).round} times faster"
+    end
+    
+        user     system      total        real
+    4.340000   0.880000   5.220000 (  5.216383)
+    0.030000   0.000000   0.030000 (  0.027656)
+    189 times faster
   </code>
 </pre>
 
