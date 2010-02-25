@@ -21,7 +21,7 @@ module Skip
   
   # override the given method with a JIT optimized one
   # The code may only use Numerical classes and arrays
-  def self.optimize klass, meth
+  def self.optimize klass, meth, *setup_args
     begin
       require 'rubygems'
       require 'jit'
@@ -64,6 +64,7 @@ module Skip
       end
       klass.send :alias_method, meth.to_s + "_original", meth
       klass.send :define_method, meth, l
+      klass.new.send meth, *setup_args unless setup_args.empty?
     rescue LoadError
       # return unmodified block if dependencies are not met
       puts "WARNING: ruby-libjit and ParseTree gems are required for JIT compilation"
@@ -232,8 +233,7 @@ if __FILE__ == $0
     GC.start
     r = x.report{ n.times{ a.blub v } }
     
-    Skip::optimize A, :blub
-    A.new.blub 1
+    Skip::optimize A, :blub, 1
     
     GC.start
     jit = x.report{ n.times{ a.blub v } }
