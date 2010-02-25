@@ -4,25 +4,27 @@
 
 
 module Skip
-  # optimized can either be called with a block, to return  a jitted version of it, 
-  # or with a class and a methodname, to override the given method with an optimized one
-  def self.optimized klass=nil, meth=nil, &b
-    if klass and meth
-      lambda = optimize klass, meth
-    elsif block_given?
-      # inject block into wrapper class
-      wrapper = Class.new
-      wrapper.send :define_method, :code, b
-      num_args_required = [b.arity, 0].max
-      optimize wrapper, :code
-    else
-      raise "Optimized takes either a class and a methodname or a block"
-    end
+
+  # override the given method with a JIT optimized one
+  def self.optimize klass, meth
+    alias_name = meth.to_s + "_original"
+    lambda = jit_lambda klass, alias_name
+    klass.send :alias_method, alias_name, meth
+    klass.send :define_method, meth, lambda
   end
   
-  # optimize takes a class and a method name and returns a jit optimized lambda 
+  # takes a block and returns a JIT optimized version of it
+  def self.optimized &b
+    # inject block into wrapper class
+    wrapper = Class.new
+    wrapper.send :define_method, :code, b
+    num_args_required = [b.arity, 0].max
+    jit_lambda wrapper, :code
+  end
+  
+  # takes a class and a method name and returns a jit optimized lambda 
   # The code may only use Numerical classes and arrays
-  def self.optimize klass, meth
+  def self.jit_lambda klass, meth
     begin
       require 'rubygems'
       require 'jit'
@@ -39,27 +41,28 @@ module Skip
           # build parse tree from given method
           sexp = ParseTree.translate klass, meth
           block = sexp.find{|t| t.is_a? Array }
-          puts sexp.inspect
+          #puts sexp.inspect
           # run original code to determine return type
           retval = klass.new.send meth, *args
           # build a signature to match the types of the first run
-          signature = {args.map{|a| $jit_types[a.class] } => $jit_types[retval.class]}
+          signature = { args.map{|a| $jit_types[a.class]} => $jit_types[retval.class] }
           # compile syntax tree to machine code
           jit = JIT::Function.build(signature) do |f|
             # compile parse tree recursively
-            r = compile block, f, {}, args.size
+            r = Skip::compile block, f, {}, args.size
             # return the last result produced
             f.return r
           end
           #puts jit.dump
+          # save the compiled method for future use
           Thread.current[:jit_result_info][name] = [retval, jit]
+          # check if it returns the correct result
+          raise "Compilation failed for this piece of code" if retval != jit.apply(*args) and not $debug
           retval
         else
           # run the compiled code once it exists
           retval, jit  = Thread.current[:jit_result_info][name]
-          r = jit.apply *args
-          raise "Compilation failed for this piece of code" if r != retval and not $debug
-          r
+          jit.apply *args
         end
       end
     rescue LoadError
@@ -78,14 +81,11 @@ module Skip
     case name
     when :bmethod  # lambda definition
       signature, code = token
-      recurse['signature']
+      recurse['signature'] if signature
       recurse['code']
-      #compile signature, f, jit_vars, num_args if signature
-      #compile code, f, jit_vars, num_args
     when :masgn  # init multiple block parameters
-      puts token.inspect
       params, unknown, unknown = token
-      params = compile params, f, jit_vars, num_args
+      params = recurse['params']
       args = (0...num_args).map{|i| f.param i }
       params.zip(args) do |p,a|
         jit_vars[p] = a
@@ -103,7 +103,7 @@ module Skip
     when :dasgn, :dasgn_curr  # assignment to local variable
       varname, expr = token
       if expr
-        expr = compile expr, f, jit_vars, num_args
+        expr = recurse['expr']
         jv = jit_vars[varname]
         if jv
           jv.store expr
@@ -119,16 +119,16 @@ module Skip
         varname
       end
     when :array
-      token.map{|expr| compile expr, f, jit_vars, num_args }
+      token.map{|expr| recurse['expr'] }
     when :block
       for expr in token
-        r = compile expr, f, jit_vars, num_args
+        r = recurse['expr']
       end
       r
     when :call
       obj, method, args = token
-      obj = compile obj, f, jit_vars, num_args
-      args = compile args, f, jit_vars, num_args
+      obj = recurse['obj']
+      args = recurse['args']
       case method.to_s
       when *%w{ + - * / < > % == }
         obj.send method, args.first
@@ -137,32 +137,32 @@ module Skip
       end
     when :if
       cond, code, retval = token
-      cond = compile cond, f, jit_vars, num_args
+      cond = recurse['cond']
       f.if( cond ) {
-        compile code, f, jit_vars, num_args
+        recurse['code']
       }.end
     when :while
       cond, code, retval = token
       dummy, lhs, op, rhs = cond
-      lhs = compile lhs, f, jit_vars, num_args
-      rhs = compile rhs, f, jit_vars, num_args
+      lhs = recurse['lhs']
+      rhs = recurse['rhs']
       f.while{ lhs.send op, rhs.first }.do{
-        compile code, f, jit_vars, num_args
+        recurse['code']
       }.end
       retval
     when :iter
       meth, param, code = token
       dummy, receiver, meth = meth
       if param
-        param = compile param, f, jit_vars, num_args 
+        param = recurse['param']
         param = jit_vars[param] = f.value(:INT,0)
       end
-      receiver = compile receiver, f, jit_vars, num_args
+      receiver = recurse['receiver']
       case meth
       when :times 
         param ||= f.value(:INT,0)
         f.while{ param < receiver }.do{
-          compile code, f, jit_vars, num_args
+          recurse['code']
           param.store param + 1
         }.end
       when :each
@@ -172,7 +172,7 @@ module Skip
         i = f.value(:INT, 0)
         f.while{ i < receiver.size }.do{
           param.store array_instance[0] + i
-          compile code, f, jit_vars, num_args
+          recurse['code']
           i.store i + 1
         }.end
       else
@@ -189,26 +189,28 @@ if __FILE__ == $0
   require 'benchmark'
   $debug = true
   
-  sum = lambda do |n|
-    a = []
-    n.times do |e|
-      a << e
+  class A
+    def blub
+      i = 0
+      5000.times{ i += 1 }
+      i
     end
-    a[n-1]
-    7
   end
 
-  sumo = Skip::optimized &sum
-
   puts "-" * 60
-  puts sumo[20]
-  puts sumo[20]
+  r = A.new.blub
+  Skip::optimize A, :blub
+  puts A.new.blub
+  puts r
 
-  n = 2
+  n = 200
   Benchmark.bm do |x|
-    x.report{ n.times{ sum[99999] } }
     GC.start
-    x.report{ n.times{ sumo[99999] } }
+    x.report{ n.times{ A.new.blub } }
+    
+    Skip::optimize A, :blub
+    GC.start
+    x.report{ n.times{ A.new.blub } }
   end
 end
 
