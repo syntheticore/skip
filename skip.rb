@@ -76,9 +76,8 @@ module Skip
   # it recursively into the given function
   def self.compile token, f, jit_vars, num_args
     recurse = lambda{|var| eval "compile #{var}, f, jit_vars, num_args" }
-    #puts token.inspect
     name = token.shift
-    puts name
+    #puts name
     case name
     when :defn
       name, body = token
@@ -144,12 +143,6 @@ module Skip
         varname
       end
     when :array
-#      $array_sizes ||= {}
-#      array_type = JIT::Array.new(JIT::Type::INT, token.size)
-#      array_instance = array_type.create(f)
-#      token.each_with_index{|expr,i| array_instance[i] = recurse[:expr] }
-#      $array_sizes[array_instance] = token.size
-#      array_instance
       token.map{|expr| recurse[:expr] }
     when :call
       obj, method, args = token
@@ -159,7 +152,6 @@ module Skip
       when *%w{ + - * / < > % == <= >= }
         obj.send method, args[0]
       when "[]"
-        #i = $literals[args[0]]
         obj[$literals[args[0]]]
       else
         puts "WARNING: Calling #{method} is not supported"
@@ -199,29 +191,12 @@ module Skip
           param.store param + 1
         }.end
       when :each
-        #i = f.value(:INT, 0)
-        #f.while{ i < receiver.size }.do{
-        #f.while{ i < $array_sizes[receiver] }.do{
         for v in receiver
           param.store v
           cp = Marshal.load(Marshal.dump code)
           recurse[:cp]
         end
-          #i.store i + 1
-        #}.end
       when :map
-#        array_type = JIT::Array.new(JIT::Type::INT, receiver.size)
-#        original_array = array_type.create(f)
-#        new_array = array_type.create(f)
-#        receiver.each_with_index{|v,i| original_array[i] = v }
-#        i = f.value(:INT, 0)
-#        f.while{ i < receiver.size }.do{
-#          param.store original_array[0] + i
-#          e = recurse[:code]
-#          (new_array[0] + i).store e
-#          i.store i + 1
-#        }.end
-#        new_array
         new_array = Array.new(receiver.size){ f.value(:INT, 0) }
         receiver.each_with_index do|v,i|
           param.store v
@@ -243,22 +218,23 @@ end
 
 if __FILE__ == $0
   require 'benchmark'
-  $debug = true
+  #$debug = true
   
   class A
     def fib a
-      return 0 if a == 0
-      return 1 if a == 1
+      return a if a <= 1
       fib(a-1) + fib(a-2)
     end
     
-    def fub a
+    def fub v
       s = 0
-      n = [1,2,3].map do |e|
-        e * 5
-      end
-      n.each do |e|
-        s += e
+      v.times do |i|
+        n = [1,2,3].map do |e|
+          e * i
+        end
+        n.each do |e|
+          s += e
+        end
       end
       s
     end
@@ -266,25 +242,25 @@ if __FILE__ == $0
 
   puts "-" * 60
   
-  v = 19
-  Skip::optimize A, :fub
+  v = 9000
+#  Skip::optimize A, :fub
   a = A.new
-  puts a.fub v
-  puts a.fub v
-  puts a.fub v
+#  puts a.fub v
+#  puts a.fub v
+#  puts a.fub v
 
-#  n = 100
-#  Benchmark.bm do |x|
-#    GC.start
-#    r = x.report{ n.times{ a.fib v } }
-#    
-#    Skip::optimize A, :fib, 1
-#    
-#    GC.start
-#    jit = x.report{ n.times{ a.fib v } }
-#    
-#    puts "#{(r.real / jit.real).round} times faster"
-#  end
+  n = 100
+  Benchmark.bm do |x|
+    GC.start
+    r = x.report{ n.times{|i| puts a.fub i*90 } }
+    
+    Skip::optimize A, :fub, 1
+    
+    GC.start
+    jit = x.report{ n.times{|i| puts a.fub i*90 } }
+    
+    puts "#{(r.real / jit.real).round} times faster"
+  end
 end
 
 
